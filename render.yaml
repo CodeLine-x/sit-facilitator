@@ -10,11 +10,3 @@ services:
         value: production
       - key: PORT
         value: 3000
-    envVarGroups:
-      - name: Facilitator Secrets
-        keys:
-          - EVM_PRIVATE_KEY
-          - SVM_PRIVATE_KEY
-          - SVM_RPC_URL
-          - HEDERA_PRIVATE_KEY
-          - HEDERA_ACCOUNT_ID
