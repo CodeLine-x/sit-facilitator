@@ -81,6 +81,8 @@ If you prefer not to use `render.yaml`:
    - Click "Create Web Service"
    - Render will automatically deploy
 
+**Note**: The build process is optimized for Render's free tier by skipping TypeScript type declaration generation (`SKIP_DTS=true`), which significantly reduces memory usage during builds. The facilitator runs on `tsx` and doesn't require these type declarations at runtime.
+
 ## Testing Your Deployment
 
 Once deployed, test the facilitator endpoints:

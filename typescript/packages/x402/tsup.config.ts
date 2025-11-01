@@ -1,5 +1,8 @@
 import { defineConfig } from "tsup";
 
+// Skip DTS build if SKIP_DTS environment variable is set (for low-memory environments)
+const skipDts = process.env.SKIP_DTS === "true";
+
 // JS builds: include all runtime entries, but do not emit DTS to keep memory usage low
 const jsEntries = {
   index: "src/index.ts",
@@ -39,7 +42,7 @@ const dtsEntries = {
   "verify/index": "src/verify/index.ts",
 };
 
-export default defineConfig([
+const configs = [
   // ESM JS
   {
     entry: jsEntries,
@@ -70,8 +73,11 @@ export default defineConfig([
     skipNodeModulesBundle: true,
     shims: false,
   },
-  // DTS-only (ESM)
-  {
+];
+
+// Only add DTS build if not skipping
+if (!skipDts) {
+  configs.push({
     entry: dtsEntries,
     dts: { resolve: true },
     format: "esm",
@@ -84,5 +90,7 @@ export default defineConfig([
     minify: false,
     skipNodeModulesBundle: true,
     shims: false,
-  },
-]);
+  });
+}
+
+export default defineConfig(configs);

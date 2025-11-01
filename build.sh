@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Increase Node.js memory limit
+export NODE_OPTIONS="--max-old-space-size=4096"
+
 # Install pnpm if not already available
 if ! command -v pnpm &> /dev/null; then
   echo "Installing pnpm..."
@@ -13,11 +16,10 @@ cd typescript
 pnpm install
 pnpm build
 
-# Build the examples
-echo "Building examples..."
+# Install facilitator dependencies (tsx and other deps needed at runtime)
+echo "Installing facilitator dependencies..."
 cd ../examples/typescript
 pnpm install
-pnpm build
 
 echo "Build complete!"
 
