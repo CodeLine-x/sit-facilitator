@@ -13,7 +13,7 @@ This guide helps you verify that your facilitator is working correctly after dep
 ### 1. Check Service Status
 
 ```bash
-curl https://your-service.onrender.com/supported
+curl https://x402-facilitator-3rz0.onrender.com/supported
 ```
 
 **Expected Response:**
