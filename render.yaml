@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: x402-facilitator
+    name: sit-facilitator
     runtime: node
     plan: free
     buildCommand: ./build.sh
