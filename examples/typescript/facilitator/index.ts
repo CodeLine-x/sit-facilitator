@@ -70,15 +70,31 @@ function decodePaymentHeaderToPayload(header: string): PaymentPayload {
     const jsonStr = Buffer.from(header, "base64").toString("utf8");
     const parsed = JSON.parse(jsonStr);
 
-    // Header JSON looks like: { scheme, network, x402Version, payload: { ... } }
-    const rawPayload = parsed.payload ?? parsed.paymentPayload ?? parsed;
+    // Case 1: header already IS a PaymentPayload
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "x402Version" in parsed &&
+      "scheme" in parsed &&
+      "network" in parsed
+    ) {
+      return PaymentPayloadSchema.parse(parsed);
+    }
 
-    return PaymentPayloadSchema.parse(rawPayload);
+    // Case 2: wrapped as { payload: { ... } } or { paymentPayload: { ... } }
+    const rawPayload = (parsed as any).payload ?? (parsed as any).paymentPayload;
+    if (rawPayload) {
+      return PaymentPayloadSchema.parse(rawPayload);
+    }
+
+    console.error("[decodePaymentHeaderToPayload] no recognizable payload shape:", parsed);
+    throw new Error("invalid_payment_header");
   } catch (err) {
     console.error("[decodePaymentHeaderToPayload] failed:", err);
     throw new Error("invalid_payment_header");
   }
 }
+
 
 // ---------------------- /verify ---------------------------------------
 app.post("/verify", async (req: Request, res: Response) => {
