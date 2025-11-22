@@ -42,12 +42,15 @@ if (HEDERA_PRIVATE_KEY && !HEDERA_ACCOUNT_ID) {
   process.exit(1);
 }
 
+
 // Create X402 config with custom RPC URL if provided
 const x402Config: X402Config | undefined = SVM_RPC_URL
   ? { svmConfig: { rpcUrl: SVM_RPC_URL } }
   : undefined;
 
 const app = express();
+
+// Configure express to parse JSON bodies
 app.use(express.json());
 
 type VerifyRequest = {
@@ -60,7 +63,6 @@ type SettleRequest = {
   paymentRequirements: PaymentRequirements;
 };
 
-// ---------- FIXED /verify ----------
 app.post("/verify", async (req: Request, res: Response) => {
   console.log("[/verify] incoming body (truncated):", JSON.stringify(req.body).slice(0, 400));
 
@@ -71,8 +73,6 @@ app.post("/verify", async (req: Request, res: Response) => {
     const paymentRequirements = PaymentRequirementsSchema.parse(body.paymentRequirements);
     const paymentPayload = PaymentPayloadSchema.parse(body.paymentPayload);
 
-    console.log("[/verify] network:", paymentRequirements.network);
-
     // Choose client / signer based on network
     let client: Signer | ConnectedClient;
 
@@ -80,36 +80,18 @@ app.post("/verify", async (req: Request, res: Response) => {
       console.log("[/verify] using EVM client for network:", paymentRequirements.network);
       client = createConnectedClient(paymentRequirements.network);
     } else if (SupportedSVMNetworks.includes(paymentRequirements.network)) {
-      if (!SVM_PRIVATE_KEY) {
-        console.error("[/verify] SVM_PRIVATE_KEY not configured");
-        return res.json({
-          valid: false,
-          reason: "missing_svm_private_key",
-          detail: "SVM_PRIVATE_KEY is not set on the facilitator",
-        });
-      }
       console.log("[/verify] using SVM signer for network:", paymentRequirements.network);
       client = await createSigner(paymentRequirements.network, SVM_PRIVATE_KEY);
     } else if (SupportedHederaNetworks.includes(paymentRequirements.network)) {
-      if (!HEDERA_PRIVATE_KEY || !HEDERA_ACCOUNT_ID) {
-        console.error("[/verify] Hedera env vars missing");
-        return res.json({
-          valid: false,
-          reason: "missing_hedera_config",
-          detail: "HEDERA_PRIVATE_KEY or HEDERA_ACCOUNT_ID is not set on the facilitator",
-        });
-      }
       console.log("[/verify] using Hedera signer for network:", paymentRequirements.network);
       client = await createSigner(paymentRequirements.network, HEDERA_PRIVATE_KEY, {
         accountId: HEDERA_ACCOUNT_ID,
       });
     } else {
-      console.error("[/verify] unsupported network:", paymentRequirements.network);
-      // IMPORTANT: still 200, just valid: false
-      return res.json({
+      console.error("[/verify] invalid network:", paymentRequirements.network);
+      return res.status(400).json({
         valid: false,
-        reason: "unsupported_network",
-        detail: `Unsupported network: ${paymentRequirements.network}`,
+        reason: `Unsupported network: ${paymentRequirements.network}`,
       });
     }
 
@@ -125,12 +107,10 @@ app.post("/verify", async (req: Request, res: Response) => {
     const valid = (await Promise.race([verifyPromise, timeoutPromise])) as unknown;
 
     console.log("[/verify] verify result:", valid);
-    // SUCCESS / FAILURE is encoded in 'valid', but HTTP status is ALWAYS 200
     return res.json(valid);
   } catch (error: any) {
     console.error("[/verify] error:", error);
-    // IMPORTANT: do NOT return 500 here – always 200 with valid:false
-    return res.json({
+    return res.status(500).json({
       valid: false,
       reason: "facilitator_error",
       detail: error?.message ?? String(error),
@@ -138,8 +118,36 @@ app.post("/verify", async (req: Request, res: Response) => {
   }
 });
 
-// ---------- REMOVE THE SECOND /verify ROUTE ENTIRELY ----------
-// (you had a duplicate app.post("/verify", ...) – delete it)
+
+app.post("/verify", async (req: Request, res: Response) => {
+  try {
+    const body: VerifyRequest = req.body;
+    const paymentRequirements = PaymentRequirementsSchema.parse(body.paymentRequirements);
+    const paymentPayload = PaymentPayloadSchema.parse(body.paymentPayload);
+    // use the correct client/signer based on the requested network
+    // svm verify requires a Signer because it signs & simulates the txn
+    // hedera verify requires a Signer because it verifies the txn
+    let client: Signer | ConnectedClient;
+    if (SupportedEVMNetworks.includes(paymentRequirements.network)) {
+      client = createConnectedClient(paymentRequirements.network);
+    } else if (SupportedSVMNetworks.includes(paymentRequirements.network)) {
+      client = await createSigner(paymentRequirements.network, SVM_PRIVATE_KEY);
+    } else if (SupportedHederaNetworks.includes(paymentRequirements.network)) {
+      client = await createSigner(paymentRequirements.network, HEDERA_PRIVATE_KEY, {
+        accountId: HEDERA_ACCOUNT_ID,
+      });
+    } else {
+      throw new Error("Invalid network");
+    }
+
+    // verify
+    const valid = await verify(client, paymentPayload, paymentRequirements, x402Config);
+    res.json(valid);
+  } catch (error) {
+    console.error("error", error);
+    res.status(400).json({ error: "Invalid request" });
+  }
+});
 
 app.get("/settle", (req: Request, res: Response) => {
   res.json({
@@ -217,19 +225,10 @@ app.post("/settle", async (req: Request, res: Response) => {
     // use the correct private key based on the requested network
     let signer: Signer;
     if (SupportedEVMNetworks.includes(paymentRequirements.network)) {
-      if (!EVM_PRIVATE_KEY) {
-        throw new Error("EVM_PRIVATE_KEY not configured");
-      }
       signer = await createSigner(paymentRequirements.network, EVM_PRIVATE_KEY);
     } else if (SupportedSVMNetworks.includes(paymentRequirements.network)) {
-      if (!SVM_PRIVATE_KEY) {
-        throw new Error("SVM_PRIVATE_KEY not configured");
-      }
       signer = await createSigner(paymentRequirements.network, SVM_PRIVATE_KEY);
     } else if (SupportedHederaNetworks.includes(paymentRequirements.network)) {
-      if (!HEDERA_PRIVATE_KEY || !HEDERA_ACCOUNT_ID) {
-        throw new Error("Hedera env vars not configured");
-      }
       signer = await createSigner(paymentRequirements.network, HEDERA_PRIVATE_KEY, {
         accountId: HEDERA_ACCOUNT_ID,
       });
@@ -238,12 +237,11 @@ app.post("/settle", async (req: Request, res: Response) => {
     }
 
     // settle
-    const responseBody = await settle(signer, paymentPayload, paymentRequirements, x402Config);
-    res.json(responseBody);
-  } catch (error: any) {
-    console.error("[/settle] error", error);
-    // You *can* keep 400 here, but to mirror /verify you could also always return 200
-    res.status(400).json({ error: "Invalid request", detail: error?.message ?? String(error) });
+    const response = await settle(signer, paymentPayload, paymentRequirements, x402Config);
+    res.json(response);
+  } catch (error) {
+    console.error("error", error);
+    res.status(400).json({ error: `Invalid request: ${error}` });
   }
 });
 
