@@ -63,61 +63,16 @@ type SettleRequest = {
   paymentRequirements: PaymentRequirements;
 };
 
-app.post("/verify", async (req: Request, res: Response) => {
-  console.log("[/verify] incoming body (truncated):", JSON.stringify(req.body).slice(0, 400));
-
-  try {
-    const body: VerifyRequest = req.body;
-
-    // Strong validation of inputs
-    const paymentRequirements = PaymentRequirementsSchema.parse(body.paymentRequirements);
-    const paymentPayload = PaymentPayloadSchema.parse(body.paymentPayload);
-
-    // Choose client / signer based on network
-    let client: Signer | ConnectedClient;
-
-    if (SupportedEVMNetworks.includes(paymentRequirements.network)) {
-      console.log("[/verify] using EVM client for network:", paymentRequirements.network);
-      client = createConnectedClient(paymentRequirements.network);
-    } else if (SupportedSVMNetworks.includes(paymentRequirements.network)) {
-      console.log("[/verify] using SVM signer for network:", paymentRequirements.network);
-      client = await createSigner(paymentRequirements.network, SVM_PRIVATE_KEY);
-    } else if (SupportedHederaNetworks.includes(paymentRequirements.network)) {
-      console.log("[/verify] using Hedera signer for network:", paymentRequirements.network);
-      client = await createSigner(paymentRequirements.network, HEDERA_PRIVATE_KEY, {
-        accountId: HEDERA_ACCOUNT_ID,
-      });
-    } else {
-      console.error("[/verify] invalid network:", paymentRequirements.network);
-      return res.status(400).json({
-        valid: false,
-        reason: `Unsupported network: ${paymentRequirements.network}`,
-      });
-    }
-
-    // Hard timeout so we never hang the caller
-    const VERIFY_TIMEOUT_MS = 8000;
-
-    const verifyPromise = verify(client, paymentPayload, paymentRequirements, x402Config);
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("verify() timed out")), VERIFY_TIMEOUT_MS),
-    );
-
-    const valid = (await Promise.race([verifyPromise, timeoutPromise])) as unknown;
-
-    console.log("[/verify] verify result:", valid);
-    return res.json(valid);
-  } catch (error: any) {
-    console.error("[/verify] error:", error);
-    return res.status(500).json({
-      valid: false,
-      reason: "facilitator_error",
-      detail: error?.message ?? String(error),
-    });
-  }
+app.get("/verify", (req: Request, res: Response) => {
+  res.json({
+    endpoint: "/verify",
+    description: "POST to verify x402 payments",
+    body: {
+      paymentPayload: "PaymentPayload",
+      paymentRequirements: "PaymentRequirements",
+    },
+  });
 });
-
 
 app.post("/verify", async (req: Request, res: Response) => {
   try {
